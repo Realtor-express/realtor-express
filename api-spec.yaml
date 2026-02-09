@@ -33,17 +33,133 @@ paths:
       # ... (будет позже)
 
   # --- CLIENT ACTIONS ---
-  /client/questionnaire:
+    /client/questionnaire:
     post:
-      summary: Submit the 7-step client questionnaire
-      description: This is the main input for the matching algorithm.
-      # ... (будет позже)
+      summary: Submit or update the client questionnaire
+      description: |
+        Creates or updates the 7-step questionnaire for matching.
+        - On first call, creates a new questionnaire in status "draft"
+        - Client can update step-by-step by sending current_step and partial answers
+        - Final submission changes status to "submitted" and triggers matching
+      tags:
+        - Client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client_id:
+                  type: string
+                  format: uuid
+                current_step:
+                  type: integer
+                  minimum: 1
+                  maximum: 7
+                answers:
+                  $ref: '#/components/schemas/Questionnaire/properties/answers'
+                submit_final:
+                  type: boolean
+                  default: false
+                  description: Set to true to finalize and trigger matching
+      responses:
+        '200':
+          description: Questionnaire saved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Questionnaire'
+        '400':
+          description: Invalid input data
+        '404':
+          description: Client not found
 
   # --- AGENT ACTIONS ---
-  /agent/leads:
+    /agent/leads:
     get:
-      summary: Get the agent's feed of matched client leads
-      # ... (будет позже)
+      summary: Get the agent's personalized lead feed
+      description: |
+        Returns matched client questionnaires for this agent.
+        - Only returns leads where agent is in matched_agents list
+        - Leads are filtered by agent's specialization districts
+        - Can filter by lead status and match score
+        - Automatically marks leads as "viewed" when returned
+      tags:
+        - Agent
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [new, contacted, closed]
+          description: Filter by lead status
+        - name: min_match_score
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+            default: 70
+          description: Minimum match score to include
+        - name: include_contacted
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include leads already contacted
+      responses:
+        '200':
+          description: List of matched leads
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AgentLead'
+        '401':
+          description: Agent not authenticated
+
+  /agent/leads/{lead_id}/contact:
+    post:
+      summary: Mark lead as contacted and send initial response
+      description: |
+        When agent decides to contact a client:
+        1. Marks the lead as "contacted" in the system
+        2. Records the contact method and timestamp
+        3. Optionally sends a templated response
+        4. Triggers notification to client
+      tags:
+        - Agent
+      parameters:
+        - name: lead_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                contact_method:
+                  type: string
+                  enum: [call, email, in_app_message]
+                  default: "in_app_message"
+                template_id:
+                  type: string
+                  description: ID of the quick response template used
+                  example: "template_welcome_1"
+                custom_message:
+                  type: string
+                  maxLength: 500
+      responses:
+        '200':
+          description: Contact recorded successfully
+        '404':
+          description: Lead not found or not accessible to this agent
 
   # --- MATCHING ENGINE ---
   /match/{questionnaire_id}:
@@ -75,3 +191,153 @@ components:
         email: "client@example.com"
         password: "SecurePass123"
         user_type: "client"
+    Questionnaire:
+      type: object
+      required:
+        - client_id
+        - current_step
+        - answers
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique ID of the questionnaire
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        client_id:
+          type: string
+          format: uuid
+          description: ID of the client who filled the questionnaire
+        current_step:
+          type: integer
+          minimum: 1
+          maximum: 7
+          description: Last completed step (1-7)
+        answers:
+          type: object
+          description: Collected answers from all steps
+          properties:
+            # Шаг 1: Тип операции
+            transaction_type:
+              type: string
+              enum: [buy, sell, rent]
+            # Шаг 2: Тип недвижимости
+            property_type:
+              type: string
+              enum: [apartment, house, condo, commercial, land]
+            # Шаг 3: Район (ZIP-код или район NYC)
+            districts:
+              type: array
+              items:
+                type: string
+              example: ["10001", "10019"] # ZIP коды Манхэттена
+            # Шаг 4: Бюджет
+            budget:
+              type: object
+              properties:
+                min:
+                  type: integer
+                  example: 500000
+                max:
+                  type: integer
+                  example: 1500000
+                currency:
+                  type: string
+                  default: "USD"
+            # Шаг 5: Сроки
+            timeline:
+              type: string
+              enum: [urgent_30_days, flexible_90_days, exploring]
+            # Шаг 6: Особые требования
+            requirements:
+              type: array
+              items:
+                type: string
+              example: ["pet_friendly", "parking", "gym", "concierge"]
+            # Шаг 7: Контактные данные и согласие
+            contact_preference:
+              type: string
+              enum: [call, email, whatsapp]
+            contact_agreed:
+              type: boolean
+              default: false
+        status:
+          type: string
+          enum: [draft, submitted, matching_in_progress, matched, expired]
+          default: "draft"
+        matched_agents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MatchedAgent'
+          description: List of agents matched to this questionnaire (populated by system)
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    MatchedAgent:
+      type: object
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        match_score:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: "Percentage match (92%, 87%, etc.)"
+        match_reasons:
+          type: array
+          items:
+            type: string
+          example: ["district_match", "specialization_match", "budget_fit"]
+        contacted:
+          type: boolean
+          default: false
+        contacted_at:
+          type: string
+          format: date-time
+    
+    AgentLead:
+      type: object
+      properties:
+        lead_id:
+          type: string
+          format: uuid
+          description: Questionnaire ID
+        client_info:
+          type: object
+          properties:
+            transaction_type:
+              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/transaction_type'
+            property_type:
+              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/property_type'
+            districts:
+              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/districts'
+            budget:
+              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/budget'
+            timeline:
+              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/timeline'
+        match_info:
+          type: object
+          properties:
+            match_score:
+              type: number
+            match_reasons:
+              type: array
+              items:
+                type: string
+            matched_at:
+              type: string
+              format: date-time
+        status:
+          type: string
+          enum: [new, viewed, contacted, closed]
+          default: "new"
+        contacted_at:
+          type: string
+          format: date-time
+        contact_preference:
+          $ref: '#/components/schemas/Questionnaire/properties/answers/properties/contact_preference'
+        
