@@ -1,0 +1,77 @@
+openapi: 3.0.3
+info:
+  title: Realtor Express API
+  description: Core backend API for the Realtor Express platform. Manages users, matching, leads, and communications.
+  version: 0.1.0
+
+servers:
+  - url: https://api.realtor-express.com/v1
+    description: Production server (example)
+
+paths:
+  # --- AUTHENTICATION ---
+  /auth/register:
+    post:
+      summary: Register a new user (Client or Agent)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegister'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /auth/login:
+    post:
+      summary: Authenticate user and receive tokens
+      # ... (будет позже)
+
+  # --- CLIENT ACTIONS ---
+  /client/questionnaire:
+    post:
+      summary: Submit the 7-step client questionnaire
+      description: This is the main input for the matching algorithm.
+      # ... (будет позже)
+
+  # --- AGENT ACTIONS ---
+  /agent/leads:
+    get:
+      summary: Get the agent's feed of matched client leads
+      # ... (будет позже)
+
+  # --- MATCHING ENGINE ---
+  /match/{questionnaire_id}:
+    get:
+      summary: (Internal/Admin) Run matching algorithm for a specific questionnaire
+      # ... (будет позже)
+
+# We will define detailed schemas (User, Questionnaire, Lead, etc.) here later.
+components:
+  schemas:
+    UserRegister:
+      type: object
+      required:
+        - email
+        - password
+        - user_type
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+        user_type:
+          type: string
+          enum: [client, agent]
+      example:
+        email: "client@example.com"
+        password: "SecurePass123"
+        user_type: "client"
