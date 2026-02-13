@@ -2,17 +2,345 @@ openapi: 3.0.3
 info:
   title: Realtor Express API
   description: Core backend API for the Realtor Express platform. Manages users, matching, leads, and communications.
-  version: 0.1.0
+  version: 0.2.0
 
 servers:
   - url: https://api.realtor-express.com/v1
     description: Production server (example)
 
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ---------- AUTH / USERS ----------
+    UserRegister:
+      type: object
+      required:
+        - email
+        - password
+        - user_type
+        - first_name
+        - last_name
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+        first_name:
+          type: string
+        last_name:
+          type: string
+        phone:
+          type: string
+          example: "+12125551234"
+        user_type:
+          type: string
+          enum: [client, agent]
+      example:
+        email: "agent@example.com"
+        password: "SecurePass123"
+        first_name: "John"
+        last_name: "Doe"
+        phone: "+12125551234"
+        user_type: "agent"
+
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+          default: bearer
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+        last_name:
+          type: string
+        phone:
+          type: string
+        user_type:
+          type: string
+          enum: [client, agent, admin]
+        agent_profile:
+          $ref: '#/components/schemas/AgentProfile'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ---------- AGENT PROFILE ----------
+    AgentProfile:
+      type: object
+      description: Professional profile for a verified real estate agent
+      required:
+        - user_id
+        - license_number
+        - districts
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        license_number:
+          type: string
+          example: "10301234567"
+        license_verified:
+          type: boolean
+          default: false
+        license_verified_at:
+          type: string
+          format: date-time
+        verification_document_url:
+          type: string
+          format: uri
+        company:
+          type: string
+          example: "Douglas Elliman"
+        experience_years:
+          type: integer
+          minimum: 0
+        bio:
+          type: string
+          maxLength: 1000
+        avatar_url:
+          type: string
+          format: uri
+        districts:
+          type: array
+          items:
+            type: string
+          example: ["10001", "10019", "10022"]
+        property_types:
+          type: array
+          items:
+            type: string
+            enum: [apartment, house, condo, commercial, land]
+        transaction_types:
+          type: array
+          items:
+            type: string
+            enum: [buy, sell, rent]
+        languages:
+          type: array
+          items:
+            type: string
+          example: ["English", "Spanish", "Russian"]
+        rating:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+          default: 0
+        review_count:
+          type: integer
+          default: 0
+        completed_deals:
+          type: integer
+          default: 0
+        is_verified:
+          type: boolean
+          default: false
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ---------- QUICK REPLY TEMPLATES ----------
+    QuickReplyTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: "I'm interested"
+        content:
+          type: string
+          example: "Hi, I'd like to schedule a viewing for this property."
+        usage_count:
+          type: integer
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ---------- QUESTIONNAIRE & MATCHING ----------
+    Questionnaire:
+      type: object
+      required:
+        - client_id
+        - current_step
+        - answers
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        client_id:
+          type: string
+          format: uuid
+        current_step:
+          type: integer
+          minimum: 1
+          maximum: 7
+        answers:
+          type: object
+          properties:
+            transaction_type:
+              type: string
+              enum: [buy, sell, rent]
+            property_type:
+              type: string
+              enum: [apartment, house, condo, commercial, land]
+            districts:
+              type: array
+              items:
+                type: string
+              example: ["10001", "10019"]
+            budget:
+              type: object
+              properties:
+                min:
+                  type: integer
+                  example: 500000
+                max:
+                  type: integer
+                  example: 1500000
+                currency:
+                  type: string
+                  default: "USD"
+            timeline:
+              type: string
+              enum: [urgent_30_days, flexible_90_days, exploring]
+            requirements:
+              type: array
+              items:
+                type: string
+              example: ["pet_friendly", "parking", "gym", "concierge"]
+            contact_preference:
+              type: string
+              enum: [call, email, whatsapp]
+            contact_agreed:
+              type: boolean
+              default: false
+        status:
+          type: string
+          enum: [draft, submitted, matching_in_progress, matched, expired]
+          default: draft
+        matched_agents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MatchedAgent'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    MatchedAgent:
+      type: object
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        match_score:
+          type: number
+          minimum: 0
+          maximum: 100
+        match_reasons:
+          type: array
+          items:
+            type: string
+          example: ["district_match", "specialization_match", "budget_fit"]
+        contacted:
+          type: boolean
+          default: false
+        contacted_at:
+          type: string
+          format: date-time
+
+    AgentLead:
+      type: object
+      properties:
+        lead_id:
+          type: string
+          format: uuid
+        client_info:
+          type: object
+          properties:
+            transaction_type:
+              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/transaction_type'
+            property_type:
+              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/property_type'
+            districts:
+              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/districts'
+            budget:
+              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/budget'
+            timeline:
+              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/timeline'
+        match_info:
+          type: object
+          properties:
+            match_score:
+              type: number
+            match_reasons:
+              type: array
+              items:
+                type: string
+            matched_at:
+              type: string
+              format: date-time
+        status:
+          type: string
+          enum: [new, viewed, contacted, closed]
+          default: new
+        contacted_at:
+          type: string
+          format: date-time
+        contact_preference:
+          $ref: '#/components/schemas/Questionnaire/properties/answers/properties/contact_preference'
+
 paths:
-  # --- AUTHENTICATION ---
+  # ---------- AUTHENTICATION ----------
   /auth/register:
     post:
       summary: Register a new user (Client or Agent)
+      tags: [Authentication]
       requestBody:
         required: true
         content:
@@ -26,14 +354,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Invalid input or email already exists
 
   /auth/login:
     post:
-      summary: Authenticate user and receive tokens
-      # ... (будет позже)
+      summary: Authenticate user and receive JWT token
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
 
-  # --- CLIENT ACTIONS ---
-    /client/questionnaire:
+  # ---------- CLIENT ACTIONS ----------
+  /client/questionnaire:
     post:
       summary: Submit or update the client questionnaire
       description: |
@@ -41,8 +396,9 @@ paths:
         - On first call, creates a new questionnaire in status "draft"
         - Client can update step-by-step by sending current_step and partial answers
         - Final submission changes status to "submitted" and triggers matching
-      tags:
-        - Client
+      tags: [Client]
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -62,7 +418,6 @@ paths:
                 submit_final:
                   type: boolean
                   default: false
-                  description: Set to true to finalize and trigger matching
       responses:
         '200':
           description: Questionnaire saved successfully
@@ -75,8 +430,99 @@ paths:
         '404':
           description: Client not found
 
-  # --- AGENT ACTIONS ---
-    /agent/leads:
+  # ---------- AGENT ACTIONS ----------
+  /agent/profile:
+    get:
+      summary: Get the authenticated agent's profile
+      tags: [Agent]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Agent profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentProfile'
+        '401':
+          description: Not authenticated
+        '403':
+          description: User is not an agent
+
+    put:
+      summary: Update agent's profile
+      tags: [Agent]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                company:
+                  type: string
+                bio:
+                  type: string
+                districts:
+                  type: array
+                  items:
+                    type: string
+                property_types:
+                  type: array
+                  items:
+                    type: string
+                    enum: [apartment, house, condo, commercial, land]
+                transaction_types:
+                  type: array
+                  items:
+                    type: string
+                    enum: [buy, sell, rent]
+                languages:
+                  type: array
+                  items:
+                    type: string
+                avatar_url:
+                  type: string
+                  format: uri
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentProfile'
+        '400':
+          description: Invalid data
+
+  /agent/verification:
+    post:
+      summary: Submit license for verification
+      tags: [Agent]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                license_number:
+                  type: string
+                license_image:
+                  type: string
+                  format: binary
+                company:
+                  type: string
+      responses:
+        '202':
+          description: Verification submitted, pending admin review
+        '400':
+          description: Missing license information
+
+  /agent/leads:
     get:
       summary: Get the agent's personalized lead feed
       description: |
@@ -85,8 +531,9 @@ paths:
         - Leads are filtered by agent's specialization districts
         - Can filter by lead status and match score
         - Automatically marks leads as "viewed" when returned
-      tags:
-        - Agent
+      tags: [Agent]
+      security:
+        - bearerAuth: []
       parameters:
         - name: status
           in: query
@@ -129,8 +576,9 @@ paths:
         2. Records the contact method and timestamp
         3. Optionally sends a templated response
         4. Triggers notification to client
-      tags:
-        - Agent
+      tags: [Agent]
+      security:
+        - bearerAuth: []
       parameters:
         - name: lead_id
           in: path
@@ -147,11 +595,10 @@ paths:
                 contact_method:
                   type: string
                   enum: [call, email, in_app_message]
-                  default: "in_app_message"
+                  default: in_app_message
                 template_id:
                   type: string
                   description: ID of the quick response template used
-                  example: "template_welcome_1"
                 custom_message:
                   type: string
                   maxLength: 500
@@ -161,183 +608,125 @@ paths:
         '404':
           description: Lead not found or not accessible to this agent
 
-  # --- MATCHING ENGINE ---
+  # ---------- QUICK REPLY TEMPLATES ----------
+  /agent/templates:
+    get:
+      summary: Get all quick reply templates for the authenticated agent
+      tags: [Agent]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/QuickReplyTemplate'
+    post:
+      summary: Create a new quick reply template
+      tags: [Agent]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - content
+              properties:
+                title:
+                  type: string
+                content:
+                  type: string
+      responses:
+        '201':
+          description: Template created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuickReplyTemplate'
+        '400':
+          description: Invalid input
+
+  /agent/templates/{template_id}:
+    put:
+      summary: Update an existing quick reply template
+      tags: [Agent]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                content:
+                  type: string
+      responses:
+        '200':
+          description: Template updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuickReplyTemplate'
+        '404':
+          description: Template not found or not owned by agent
+
+    delete:
+      summary: Delete a quick reply template
+      tags: [Agent]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Template deleted successfully
+        '404':
+          description: Template not found or not owned by agent
+
+  # ---------- MATCHING ENGINE (Internal/Admin) ----------
   /match/{questionnaire_id}:
     get:
       summary: (Internal/Admin) Run matching algorithm for a specific questionnaire
-      # ... (будет позже)
-
-# We will define detailed schemas (User, Questionnaire, Lead, etc.) here later.
-components:
-  schemas:
-    UserRegister:
-      type: object
-      required:
-        - email
-        - password
-        - user_type
-      properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-          format: password
-          minLength: 8
-        user_type:
-          type: string
-          enum: [client, agent]
-      example:
-        email: "client@example.com"
-        password: "SecurePass123"
-        user_type: "client"
-    Questionnaire:
-      type: object
-      required:
-        - client_id
-        - current_step
-        - answers
-      properties:
-        id:
-          type: string
-          format: uuid
-          description: Unique ID of the questionnaire
-          example: "123e4567-e89b-12d3-a456-426614174000"
-        client_id:
-          type: string
-          format: uuid
-          description: ID of the client who filled the questionnaire
-        current_step:
-          type: integer
-          minimum: 1
-          maximum: 7
-          description: Last completed step (1-7)
-        answers:
-          type: object
-          description: Collected answers from all steps
-          properties:
-            # Шаг 1: Тип операции
-            transaction_type:
-              type: string
-              enum: [buy, sell, rent]
-            # Шаг 2: Тип недвижимости
-            property_type:
-              type: string
-              enum: [apartment, house, condo, commercial, land]
-            # Шаг 3: Район (ZIP-код или район NYC)
-            districts:
-              type: array
-              items:
-                type: string
-              example: ["10001", "10019"] # ZIP коды Манхэттена
-            # Шаг 4: Бюджет
-            budget:
-              type: object
-              properties:
-                min:
-                  type: integer
-                  example: 500000
-                max:
-                  type: integer
-                  example: 1500000
-                currency:
-                  type: string
-                  default: "USD"
-            # Шаг 5: Сроки
-            timeline:
-              type: string
-              enum: [urgent_30_days, flexible_90_days, exploring]
-            # Шаг 6: Особые требования
-            requirements:
-              type: array
-              items:
-                type: string
-              example: ["pet_friendly", "parking", "gym", "concierge"]
-            # Шаг 7: Контактные данные и согласие
-            contact_preference:
-              type: string
-              enum: [call, email, whatsapp]
-            contact_agreed:
-              type: boolean
-              default: false
-        status:
-          type: string
-          enum: [draft, submitted, matching_in_progress, matched, expired]
-          default: "draft"
-        matched_agents:
-          type: array
-          items:
-            $ref: '#/components/schemas/MatchedAgent'
-          description: List of agents matched to this questionnaire (populated by system)
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-
-    MatchedAgent:
-      type: object
-      properties:
-        agent_id:
-          type: string
-          format: uuid
-        match_score:
-          type: number
-          minimum: 0
-          maximum: 100
-          description: "Percentage match (92%, 87%, etc.)"
-        match_reasons:
-          type: array
-          items:
+      tags: [Admin, Matching]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: questionnaire_id
+          in: path
+          required: true
+          schema:
             type: string
-          example: ["district_match", "specialization_match", "budget_fit"]
-        contacted:
-          type: boolean
-          default: false
-        contacted_at:
-          type: string
-          format: date-time
-    
-    AgentLead:
-      type: object
-      properties:
-        lead_id:
-          type: string
-          format: uuid
-          description: Questionnaire ID
-        client_info:
-          type: object
-          properties:
-            transaction_type:
-              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/transaction_type'
-            property_type:
-              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/property_type'
-            districts:
-              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/districts'
-            budget:
-              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/budget'
-            timeline:
-              $ref: '#/components/schemas/Questionnaire/properties/answers/properties/timeline'
-        match_info:
-          type: object
-          properties:
-            match_score:
-              type: number
-            match_reasons:
-              type: array
-              items:
-                type: string
-            matched_at:
-              type: string
-              format: date-time
-        status:
-          type: string
-          enum: [new, viewed, contacted, closed]
-          default: "new"
-        contacted_at:
-          type: string
-          format: date-time
-        contact_preference:
-          $ref: '#/components/schemas/Questionnaire/properties/answers/properties/contact_preference'
-        
+            format: uuid
+      responses:
+        '200':
+          description: Matching completed successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MatchedAgent'
+        '404':
+          description: Questionnaire not found
