@@ -1,0 +1,292 @@
+openapi: 3.0.3
+info:
+  title: Realtor Express Agent Network API
+  description: >
+    MVP backend API for Realtor Express (Agents-only).
+    Supports agent onboarding, manual license verification,
+    ZIP-based broadcast network, privacy, and subscription access.
+  version: 1.0.0-mvp
+
+servers:
+  - url: https://api.realtor-express.com/v1
+    description: Production server (example)
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    # ---------- AUTH ----------
+    UserRegister:
+      type: object
+      required:
+        - email
+        - password
+        - first_name
+        - last_name
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+        first_name:
+          type: string
+        last_name:
+          type: string
+        phone:
+          type: string
+          example: "+12125551234"
+
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          default: bearer
+
+    # ---------- AGENT PROFILE ----------
+    AgentProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        first_name:
+          type: string
+        last_name:
+          type: string
+        phone:
+          type: string
+        company:
+          type: string
+        service_zip_codes:
+          type: array
+          items:
+            type: string
+          example: ["10001", "11201", "11373"]
+
+        license_status:
+          type: string
+          enum: [under_review, verified, rejected]
+          default: under_review
+
+        subscription_plan:
+          type: string
+          enum: [free, pro]
+          default: free
+
+    # ---------- BROADCAST ----------
+    Broadcast:
+      type: object
+      required:
+        - subject
+        - message
+        - zip_codes
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_by_agent_id:
+          type: string
+          format: uuid
+        subject:
+          type: string
+          example: "Looking for co-broker in Queens"
+        message:
+          type: string
+          example: "Need an agent with buyers for a 2BR listing."
+        zip_codes:
+          type: array
+          items:
+            type: string
+          example: ["11373", "11374"]
+        created_at:
+          type: string
+          format: date-time
+
+    BroadcastResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        broadcast_id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        message:
+          type: string
+          example: "Interested — I have a buyer."
+        created_at:
+          type: string
+          format: date-time
+
+
+paths:
+
+  # ---------- AUTH ----------
+  /auth/register:
+    post:
+      summary: Register a new agent
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRegister"
+      responses:
+        "201":
+          description: Agent registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  /auth/login:
+    post:
+      summary: Login and receive JWT token
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  # ---------- AGENT ----------
+  /agent/profile:
+    get:
+      summary: Get authenticated agent profile
+      tags: [Agent]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Profile retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentProfile"
+
+    put:
+      summary: Update agent profile (ZIP areas, company)
+      tags: [Agent]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                company:
+                  type: string
+                service_zip_codes:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Profile updated successfully
+
+  /agent/verification:
+    post:
+      summary: Submit license document for manual verification
+      tags: [Agent]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                license_number:
+                  type: string
+                license_file:
+                  type: string
+                  format: binary
+      responses:
+        "202":
+          description: License submitted, status = under_review
+
+  # ---------- BROADCAST ----------
+  /broadcasts:
+    get:
+      summary: Get broadcast feed for agent ZIP areas
+      tags: [Broadcast]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of broadcasts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Broadcast"
+
+    post:
+      summary: Create a new broadcast request
+      tags: [Broadcast]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Broadcast"
+      responses:
+        "201":
+          description: Broadcast created successfully
+
+  /broadcasts/{broadcast_id}/responses:
+    post:
+      summary: Respond to a broadcast
+      tags: [Broadcast]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: broadcast_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BroadcastResponse"
+      responses:
+        "201":
+          description: Response submitted successfully
