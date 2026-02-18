@@ -26,6 +26,12 @@ class AgentProfile(Base):
     contact_visibility: Mapped[bool] = mapped_column(nullable=False, default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+    DateTime(timezone=True),
+    default=datetime.utcnow,
+    onupdate=datetime.utcnow,
+    nullable=False,
+)
+
 
     user = relationship("User", backref="agent_profile", uselist=False)
