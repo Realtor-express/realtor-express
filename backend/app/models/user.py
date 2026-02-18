@@ -24,5 +24,11 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="agent")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+    DateTime(timezone=True),
+    default=datetime.utcnow,
+    onupdate=datetime.utcnow,
+    nullable=False,
+)
+
   
