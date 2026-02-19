@@ -12,12 +12,14 @@ class Settings(BaseSettings):
     JWT_ALG: str = "HS256"
     JWT_ACCESS_EXPIRES_MIN: int = 60
 
-    # На MVP можно "*" или список доменов
     CORS_ORIGINS: list[str] = ["*"]
+
+   
+    UPLOAD_DIR: str = "uploads"
 
     class Config:
         env_file = ".env"
 
 
 settings = Settings()
-UPLOAD_DIR: str = "uploads"
+
