@@ -3,45 +3,52 @@ from sqlalchemy.orm import Session
 
 from app.core.permissions import require_verified_agent
 from app.db.deps import get_db
+from app.models.agent_profile import AgentProfile
 from app.models.broadcast import Broadcast
 from app.models.user import User
+from app.schemas.broadcasts import BroadcastCreate, BroadcastOut
 
 router = APIRouter()
 
 
-@router.get("")
+def _agent_zip_set(db: Session, user_id) -> set[str]:
+    profile = db.query(AgentProfile).filter(AgentProfile.user_id == user_id).first()
+    return set(profile.service_zip_codes or []) if profile else set()
+
+
+@router.get("", response_model=list[BroadcastOut])
 def list_broadcasts(
     db: Session = Depends(get_db),
     user: User = Depends(require_verified_agent),
 ):
-    # MVP: пока просто возвращаем последние 50
+    # MVP: показываем broadcasts, которые пересекаются с ZIP агента
+    agent_zips = _agent_zip_set(db, user.id)
+    if not agent_zips:
+        return []
+
     items = (
         db.query(Broadcast)
         .order_by(Broadcast.created_at.desc())
-        .limit(50)
+        .limit(200)
         .all()
     )
-    return items
+
+    # Фильтр пересечения ZIP (быстро для MVP; позже лучше в SQL)
+    filtered = [b for b in items if set(b.zip_codes or []).intersection(agent_zips)]
+    return filtered[:50]
 
 
-@router.post("")
+@router.post("", response_model=BroadcastOut)
 def create_broadcast(
-    payload: dict,
+    payload: BroadcastCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_verified_agent),
 ):
-    subject = payload.get("subject")
-    message = payload.get("message")
-    zip_codes = payload.get("zip_codes")
-
-    if not subject or not message or not zip_codes:
-        raise HTTPException(status_code=400, detail="Missing required fields")
-
     broadcast = Broadcast(
         created_by_agent_id=user.id,
-        subject=subject,
-        message=message,
-        zip_codes=zip_codes,
+        subject=payload.subject,
+        message=payload.message,
+        zip_codes=payload.zip_codes,
     )
 
     db.add(broadcast)
@@ -51,7 +58,7 @@ def create_broadcast(
     return broadcast
 
 
-@router.get("/{broadcast_id}")
+@router.get("/{broadcast_id}", response_model=BroadcastOut)
 def get_broadcast(
     broadcast_id: str,
     db: Session = Depends(get_db),
@@ -60,16 +67,4 @@ def get_broadcast(
     item = db.query(Broadcast).filter(Broadcast.id == broadcast_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Not found")
-
     return item
-
-
-@router.post("/{broadcast_id}/responses")
-def respond_broadcast(
-    broadcast_id: str,
-    payload: dict,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_verified_agent),
-):
-    return {"message": "TODO respond broadcast"}
-
