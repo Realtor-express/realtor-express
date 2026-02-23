@@ -16,13 +16,14 @@ class AgentProfile(Base):
 
     company: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    # ZIP codes where agent provides service
     service_zip_codes: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
 
     license_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    license_status: Mapped[str] = mapped_column(String(20), nullable=False, default="under_review")  # under_review/verified/rejected
+    license_status: Mapped[str] = mapped_column(String(20), nullable=False, default="under_review")
 
-    subscription_plan: Mapped[str] = mapped_column(String(20), nullable=False, default="free")  # free/pro
+    subscription_plan: Mapped[str] = mapped_column(String(20), nullable=False, default="basic")  # basic/pro/team
+    trial_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     contact_visibility: Mapped[bool] = mapped_column(nullable=False, default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
