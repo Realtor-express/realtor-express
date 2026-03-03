@@ -19,3 +19,15 @@ class DirectoryAgentOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PublicAgentOut(BaseModel):
+    user_id: UUID
+    first_name: str
+    last_name: str
+    company: str | None
+    service_zip_codes: list[str]
+    license_status: str
+
+    class Config:
+        from_attributes = True
