@@ -1,11 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
 from uuid import UUID
 
-from app.core.permissions import (
-    require_verified_agent,
-    require_broadcast_initiator,
-)
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.core.permissions import require_verified_agent, require_broadcast_initiator
 from app.db.deps import get_db
 from app.models.agent_profile import AgentProfile
 from app.models.broadcast import Broadcast
@@ -17,6 +15,7 @@ from app.schemas.broadcasts import (
     BroadcastResponseCreate,
     BroadcastResponseOut,
 )
+from app.services.notification_service import create_notification
 
 router = APIRouter()
 
@@ -26,8 +25,60 @@ def _agent_zip_set(db: Session, user_id) -> set[str]:
     return set(profile.service_zip_codes or []) if profile else set()
 
 
+def _notify_agents_for_broadcast(db: Session, broadcast: Broadcast) -> None:
+    """
+    Notify verified agents whose service ZIP codes intersect broadcast ZIP codes.
+    Excludes the author.
+    """
+    target_zips = set(broadcast.zip_codes or [])
+    if not target_zips:
+        return
+
+    # Load all verified agent profiles (MVP approach; later optimize with SQL)
+    profiles = (
+        db.query(AgentProfile)
+        .filter(AgentProfile.license_status == "verified")
+        .all()
+    )
+
+    # Create notifications for agents with intersecting ZIPs (except author)
+    for p in profiles:
+        if str(p.user_id) == str(broadcast.created_by_agent_id):
+            continue
+
+        agent_zips = set(p.service_zip_codes or [])
+        if agent_zips.intersection(target_zips):
+            create_notification(
+                db=db,
+                user_id=p.user_id,
+                type="broadcast_created",
+                title="New broadcast in your area",
+                message=f"{broadcast.subject}",
+                entity_type="broadcast",
+                entity_id=broadcast.id,
+            )
+
+
+def _notify_author_for_response(db: Session, broadcast: Broadcast, responder: User) -> None:
+    """
+    Notify broadcast author that someone responded.
+    """
+    if str(broadcast.created_by_agent_id) == str(responder.id):
+        return
+
+    create_notification(
+        db=db,
+        user_id=broadcast.created_by_agent_id,
+        type="broadcast_response",
+        title="New response to your broadcast",
+        message=f"{responder.first_name} {responder.last_name} responded to: {broadcast.subject}",
+        entity_type="broadcast",
+        entity_id=broadcast.id,
+    )
+
+
 # =====================================================
-# LIST BROADCASTS (Basic allowed)
+# LIST BROADCASTS (Basic allowed, but must be verified)
 # =====================================================
 @router.get("", response_model=list[BroadcastOut])
 def list_broadcasts(
@@ -36,7 +87,7 @@ def list_broadcasts(
 ):
     """
     Returns broadcasts matching agent ZIP codes.
-    Basic plan can read.
+    Basic plan can read (if verified).
     """
     agent_zips = _agent_zip_set(db, user.id)
     if not agent_zips:
@@ -59,7 +110,7 @@ def list_broadcasts(
 
 
 # =====================================================
-# CREATE BROADCAST (Pro / Team / Trial only)
+# CREATE BROADCAST (Pro / Team / Trial only, verified)
 # =====================================================
 @router.post("", response_model=BroadcastOut)
 def create_broadcast(
@@ -69,6 +120,7 @@ def create_broadcast(
 ):
     """
     Only Pro/Team/Trial agents can create broadcasts.
+    Also creates notifications for relevant agents by ZIP intersection.
     """
     broadcast = Broadcast(
         created_by_agent_id=user.id,
@@ -80,6 +132,9 @@ def create_broadcast(
     db.add(broadcast)
     db.commit()
     db.refresh(broadcast)
+
+    # Notify others in matching ZIPs
+    _notify_agents_for_broadcast(db, broadcast)
 
     return broadcast
 
@@ -125,7 +180,7 @@ def list_broadcast_responses(
 
 
 # =====================================================
-# RESPOND TO BROADCAST (Basic allowed)
+# RESPOND TO BROADCAST (Basic allowed, verified)
 # =====================================================
 @router.post("/{broadcast_id}/responses", response_model=BroadcastResponseOut)
 def respond_broadcast(
@@ -138,7 +193,7 @@ def respond_broadcast(
     if not broadcast:
         raise HTTPException(status_code=404, detail="Broadcast not found")
 
-    # Optional: prevent responding to own broadcast
+    # prevent responding to own broadcast
     if str(broadcast.created_by_agent_id) == str(user.id):
         raise HTTPException(
             status_code=400,
@@ -154,5 +209,8 @@ def respond_broadcast(
     db.add(response)
     db.commit()
     db.refresh(response)
+
+    # Notify broadcast author
+    _notify_author_for_response(db, broadcast, user)
 
     return response
