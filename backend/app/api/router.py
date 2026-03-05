@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.routes import auth, agent, broadcasts, admin, directory, public
+from app.api.routes import auth, agent, broadcasts, admin, directory, public, files
 
 api_router = APIRouter()
 
@@ -10,3 +10,4 @@ api_router.include_router(broadcasts.router, prefix="/broadcasts", tags=["Broadc
 api_router.include_router(directory.router, prefix="/directory", tags=["Directory"])
 api_router.include_router(public.router, prefix="/public", tags=["Public"])
 api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
+api_router.include_router(files.router, prefix="/admin", tags=["Admin Files"])
