@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class AgentProfileUpdate(BaseModel):
     company: str | None = Field(default=None, max_length=255)
     service_zip_codes: list[str] | None = Field(default=None, description="ZIP codes where agent operates")
+    notifications_enabled: bool | None = Field(default=None, description="Enable/disable notifications")
 
 
 class AgentProfileOut(BaseModel):
@@ -16,6 +17,7 @@ class AgentProfileOut(BaseModel):
     license_status: str
     subscription_plan: str
     trial_until: datetime | None
+    notifications_enabled: bool
 
     created_at: datetime
     updated_at: datetime
