@@ -28,20 +28,20 @@ def _agent_zip_set(db: Session, user_id) -> set[str]:
 def _notify_agents_for_broadcast(db: Session, broadcast: Broadcast) -> None:
     """
     Notify verified agents whose service ZIP codes intersect broadcast ZIP codes.
+    Respects AgentProfile.notifications_enabled.
     Excludes the author.
     """
     target_zips = set(broadcast.zip_codes or [])
     if not target_zips:
         return
 
-    # Load all verified agent profiles (MVP approach; later optimize with SQL)
     profiles = (
         db.query(AgentProfile)
         .filter(AgentProfile.license_status == "verified")
+        .filter(AgentProfile.notifications_enabled == True)  # noqa: E712
         .all()
     )
 
-    # Create notifications for agents with intersecting ZIPs (except author)
     for p in profiles:
         if str(p.user_id) == str(broadcast.created_by_agent_id):
             continue
@@ -62,8 +62,13 @@ def _notify_agents_for_broadcast(db: Session, broadcast: Broadcast) -> None:
 def _notify_author_for_response(db: Session, broadcast: Broadcast, responder: User) -> None:
     """
     Notify broadcast author that someone responded.
+    Respects AgentProfile.notifications_enabled.
     """
     if str(broadcast.created_by_agent_id) == str(responder.id):
+        return
+
+    author_profile = db.query(AgentProfile).filter(AgentProfile.user_id == broadcast.created_by_agent_id).first()
+    if not author_profile or not author_profile.notifications_enabled:
         return
 
     create_notification(
@@ -77,9 +82,6 @@ def _notify_author_for_response(db: Session, broadcast: Broadcast, responder: Us
     )
 
 
-# =====================================================
-# LIST BROADCASTS (Basic allowed, but must be verified)
-# =====================================================
 @router.get("", response_model=list[BroadcastOut])
 def list_broadcasts(
     db: Session = Depends(get_db),
@@ -100,7 +102,6 @@ def list_broadcasts(
         .all()
     )
 
-    # MVP filtering in Python
     filtered = [
         b for b in items
         if set(b.zip_codes or []).intersection(agent_zips)
@@ -109,9 +110,6 @@ def list_broadcasts(
     return filtered[:50]
 
 
-# =====================================================
-# CREATE BROADCAST (Pro / Team / Trial only, verified)
-# =====================================================
 @router.post("", response_model=BroadcastOut)
 def create_broadcast(
     payload: BroadcastCreate,
@@ -133,15 +131,11 @@ def create_broadcast(
     db.commit()
     db.refresh(broadcast)
 
-    # Notify others in matching ZIPs
     _notify_agents_for_broadcast(db, broadcast)
 
     return broadcast
 
 
-# =====================================================
-# GET SINGLE BROADCAST
-# =====================================================
 @router.get("/{broadcast_id}", response_model=BroadcastOut)
 def get_broadcast(
     broadcast_id: UUID,
@@ -151,13 +145,9 @@ def get_broadcast(
     item = db.query(Broadcast).filter(Broadcast.id == broadcast_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Broadcast not found")
-
     return item
 
 
-# =====================================================
-# LIST RESPONSES
-# =====================================================
 @router.get("/{broadcast_id}/responses", response_model=list[BroadcastResponseOut])
 def list_broadcast_responses(
     broadcast_id: UUID,
@@ -175,13 +165,9 @@ def list_broadcast_responses(
         .limit(200)
         .all()
     )
-
     return items
 
 
-# =====================================================
-# RESPOND TO BROADCAST (Basic allowed, verified)
-# =====================================================
 @router.post("/{broadcast_id}/responses", response_model=BroadcastResponseOut)
 def respond_broadcast(
     broadcast_id: UUID,
@@ -193,12 +179,8 @@ def respond_broadcast(
     if not broadcast:
         raise HTTPException(status_code=404, detail="Broadcast not found")
 
-    # prevent responding to own broadcast
     if str(broadcast.created_by_agent_id) == str(user.id):
-        raise HTTPException(
-            status_code=400,
-            detail="You cannot respond to your own broadcast",
-        )
+        raise HTTPException(status_code=400, detail="You cannot respond to your own broadcast")
 
     response = BroadcastResponse(
         broadcast_id=broadcast.id,
@@ -210,7 +192,6 @@ def respond_broadcast(
     db.commit()
     db.refresh(response)
 
-    # Notify broadcast author
     _notify_author_for_response(db, broadcast, user)
 
     return response
