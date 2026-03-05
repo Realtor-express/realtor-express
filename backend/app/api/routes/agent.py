@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from app.core.auth_deps import get_current_user
 from app.db.deps import get_db
 from app.models.user import User
-from app.models.agent_profile import AgentProfile
 from app.models.verification_request import VerificationRequest
 from app.schemas.agent import AgentMeOut, AgentProfileOut, AgentProfileUpdate
 from app.schemas.verification import VerificationStatusResponse
@@ -14,9 +13,6 @@ from app.services.verification_service import create_verification_request, ensur
 router = APIRouter()
 
 
-# =====================================================
-# ME (user + profile)
-# =====================================================
 @router.get("/me", response_model=AgentMeOut)
 def me(
     db: Session = Depends(get_db),
@@ -25,17 +21,11 @@ def me(
     if user.role != "agent":
         raise HTTPException(status_code=403, detail="Agent only")
 
-    # ensure profile exists (MVP)
     ensure_agent_profile(db, user.id)
-
-    # refresh user to include relationship (if needed)
     db.refresh(user)
     return user
 
 
-# =====================================================
-# PROFILE
-# =====================================================
 @router.get("/profile", response_model=AgentProfileOut)
 def get_profile(
     db: Session = Depends(get_db),
@@ -63,7 +53,6 @@ def update_profile(
         profile.company = payload.company
 
     if payload.service_zip_codes is not None:
-        # normalize ZIPs (remove duplicates, trim spaces)
         normalized = []
         for z in payload.service_zip_codes:
             if not z:
@@ -73,14 +62,15 @@ def update_profile(
                 normalized.append(z)
         profile.service_zip_codes = normalized
 
+    # ✅ NEW: notifications toggle
+    if payload.notifications_enabled is not None:
+        profile.notifications_enabled = payload.notifications_enabled
+
     db.commit()
     db.refresh(profile)
     return profile
 
 
-# =====================================================
-# VERIFICATION SUBMIT (upload)
-# =====================================================
 @router.post("/verification", response_model=VerificationStatusResponse)
 def submit_verification(
     license_number: str = Form(...),
