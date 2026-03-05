@@ -28,6 +28,20 @@ def list_notifications(
     return items
 
 
+@router.get("/unread-count")
+def unread_count(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    cnt = (
+        db.query(Notification)
+        .filter(Notification.user_id == user.id)
+        .filter(Notification.is_read == False)  # noqa: E712
+        .count()
+    )
+    return {"unread_count": cnt}
+
+
 @router.post("/{notification_id}/read", response_model=NotificationOut)
 def mark_read(
     notification_id: UUID,
@@ -46,3 +60,18 @@ def mark_read(
     db.commit()
     db.refresh(n)
     return n
+
+
+@router.post("/read-all")
+def mark_all_read(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    updated = (
+        db.query(Notification)
+        .filter(Notification.user_id == user.id)
+        .filter(Notification.is_read == False)  # noqa: E712
+        .update({"is_read": True})
+    )
+    db.commit()
+    return {"marked_read": updated}
