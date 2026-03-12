@@ -15,6 +15,8 @@ class BroadcastOut(BaseModel):
     subject: str
     message: str
     zip_codes: list[str]
+    status: str
+    expires_at: datetime
     created_at: datetime
 
     class Config:
@@ -41,6 +43,8 @@ class BroadcastAnalyticsOut(BaseModel):
     subject: str
     message: str
     zip_codes: list[str]
+    status: str
+    expires_at: datetime
     created_at: datetime
     responses_count: int
 
