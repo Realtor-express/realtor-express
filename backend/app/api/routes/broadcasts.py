@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -26,12 +27,12 @@ def _agent_zip_set(db: Session, user_id) -> set[str]:
     return set(profile.service_zip_codes or []) if profile else set()
 
 
+def _mark_expired_if_needed(broadcast: Broadcast) -> None:
+    if broadcast.status == "active" and broadcast.expires_at < datetime.utcnow():
+        broadcast.status = "expired"
+
+
 def _notify_agents_for_broadcast(db: Session, broadcast: Broadcast) -> None:
-    """
-    Notify verified agents whose service ZIP codes intersect broadcast ZIP codes.
-    Respects AgentProfile.notifications_enabled.
-    Excludes the author.
-    """
     target_zips = set(broadcast.zip_codes or [])
     if not target_zips:
         return
@@ -61,10 +62,6 @@ def _notify_agents_for_broadcast(db: Session, broadcast: Broadcast) -> None:
 
 
 def _notify_author_for_response(db: Session, broadcast: Broadcast, responder: User) -> None:
-    """
-    Notify broadcast author that someone responded.
-    Respects AgentProfile.notifications_enabled.
-    """
     if str(broadcast.created_by_agent_id) == str(responder.id):
         return
 
@@ -99,12 +96,22 @@ def list_broadcasts(
         .all()
     )
 
-    filtered = [
-        b for b in items
-        if set(b.zip_codes or []).intersection(agent_zips)
-    ]
+    filtered = []
+    changed = False
 
-    return filtered[:50]
+    for b in items:
+        _mark_expired_if_needed(b)
+        if b.status == "active" and set(b.zip_codes or []).intersection(agent_zips):
+            filtered.append(b)
+            if len(filtered) >= 50:
+                break
+        if b.status == "expired":
+            changed = True
+
+    if changed:
+        db.commit()
+
+    return filtered
 
 
 @router.get("/mine", response_model=list[BroadcastAnalyticsOut])
@@ -121,8 +128,13 @@ def my_broadcasts(
     )
 
     result: list[BroadcastAnalyticsOut] = []
+    changed = False
 
     for b in items:
+        _mark_expired_if_needed(b)
+        if b.status == "expired":
+            changed = True
+
         responses_count = (
             db.query(BroadcastResponse)
             .filter(BroadcastResponse.broadcast_id == b.id)
@@ -135,10 +147,15 @@ def my_broadcasts(
                 subject=b.subject,
                 message=b.message,
                 zip_codes=b.zip_codes or [],
+                status=b.status,
+                expires_at=b.expires_at,
                 created_at=b.created_at,
                 responses_count=responses_count,
             )
         )
+
+    if changed:
+        db.commit()
 
     return result
 
@@ -154,6 +171,7 @@ def create_broadcast(
         subject=payload.subject,
         message=payload.message,
         zip_codes=payload.zip_codes,
+        status="active",
     )
 
     db.add(broadcast)
@@ -175,6 +193,9 @@ def get_broadcast(
     if not item:
         raise HTTPException(status_code=404, detail="Broadcast not found")
 
+    _mark_expired_if_needed(item)
+    db.commit()
+
     return item
 
 
@@ -187,6 +208,9 @@ def list_broadcast_responses(
     broadcast = db.query(Broadcast).filter(Broadcast.id == broadcast_id).first()
     if not broadcast:
         raise HTTPException(status_code=404, detail="Broadcast not found")
+
+    _mark_expired_if_needed(broadcast)
+    db.commit()
 
     items = (
         db.query(BroadcastResponse)
@@ -209,6 +233,12 @@ def respond_broadcast(
     broadcast = db.query(Broadcast).filter(Broadcast.id == broadcast_id).first()
     if not broadcast:
         raise HTTPException(status_code=404, detail="Broadcast not found")
+
+    _mark_expired_if_needed(broadcast)
+    db.commit()
+
+    if broadcast.status != "active":
+        raise HTTPException(status_code=400, detail="Cannot respond to inactive broadcast")
 
     if str(broadcast.created_by_agent_id) == str(user.id):
         raise HTTPException(status_code=400, detail="You cannot respond to your own broadcast")
