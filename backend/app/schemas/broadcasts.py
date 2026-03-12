@@ -34,3 +34,15 @@ class BroadcastResponseOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class BroadcastAnalyticsOut(BaseModel):
+    id: UUID
+    subject: str
+    message: str
+    zip_codes: list[str]
+    created_at: datetime
+    responses_count: int
+
+    class Config:
+        from_attributes = True
