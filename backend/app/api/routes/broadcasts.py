@@ -10,6 +10,7 @@ from app.models.broadcast import Broadcast
 from app.models.broadcast_response import BroadcastResponse
 from app.models.user import User
 from app.schemas.broadcasts import (
+    BroadcastAnalyticsOut,
     BroadcastCreate,
     BroadcastOut,
     BroadcastResponseCreate,
@@ -87,10 +88,6 @@ def list_broadcasts(
     db: Session = Depends(get_db),
     user: User = Depends(require_verified_agent),
 ):
-    """
-    Returns broadcasts matching agent ZIP codes.
-    Basic plan can read (if verified).
-    """
     agent_zips = _agent_zip_set(db, user.id)
     if not agent_zips:
         return []
@@ -110,16 +107,48 @@ def list_broadcasts(
     return filtered[:50]
 
 
+@router.get("/mine", response_model=list[BroadcastAnalyticsOut])
+def my_broadcasts(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_verified_agent),
+):
+    items = (
+        db.query(Broadcast)
+        .filter(Broadcast.created_by_agent_id == user.id)
+        .order_by(Broadcast.created_at.desc())
+        .limit(200)
+        .all()
+    )
+
+    result: list[BroadcastAnalyticsOut] = []
+
+    for b in items:
+        responses_count = (
+            db.query(BroadcastResponse)
+            .filter(BroadcastResponse.broadcast_id == b.id)
+            .count()
+        )
+
+        result.append(
+            BroadcastAnalyticsOut(
+                id=b.id,
+                subject=b.subject,
+                message=b.message,
+                zip_codes=b.zip_codes or [],
+                created_at=b.created_at,
+                responses_count=responses_count,
+            )
+        )
+
+    return result
+
+
 @router.post("", response_model=BroadcastOut)
 def create_broadcast(
     payload: BroadcastCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_broadcast_initiator),
 ):
-    """
-    Only Pro/Team/Trial agents can create broadcasts.
-    Also creates notifications for relevant agents by ZIP intersection.
-    """
     broadcast = Broadcast(
         created_by_agent_id=user.id,
         subject=payload.subject,
@@ -145,6 +174,7 @@ def get_broadcast(
     item = db.query(Broadcast).filter(Broadcast.id == broadcast_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Broadcast not found")
+
     return item
 
 
@@ -165,6 +195,7 @@ def list_broadcast_responses(
         .limit(200)
         .all()
     )
+
     return items
 
 
